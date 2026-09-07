@@ -1,4 +1,3 @@
-aaa
 # [OSDI'25 Artifact] Achieving Low-Latency Graph-Based Vector Search via Aligning Best-First Search Algorithm with SSD
 
 Welcome to the artifact repository of OSDI'25 accepted paper: *Achieving Low-Latency Graph-Based Vector Search via Aligning Best-First Search Algorithm with SSD*!
