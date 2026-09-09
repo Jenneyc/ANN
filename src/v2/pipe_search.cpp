@@ -45,6 +45,7 @@ namespace diskann {
     if (beam_width > MAX_N_SECTOR_READS)
       throw ANNException("Beamwidth can not be higher than MAX_N_SECTOR_READS", -1, __FUNCSIG__, __FILE__, __LINE__);
 
+    // c: preprocess
     if (data_is_normalized) {
       // Data has been normalized. Normalize search vector too.
       float norm = diskann::compute_l2_norm(query1, this->data_dim);
@@ -90,6 +91,7 @@ namespace diskann {
     std::vector<Neighbor> full_retset;
     full_retset.reserve(l_search * 10);
 
+    // c: compute query <-> PQ chunk centers distances
     // query <-> PQ chunk centers distances
     float *pq_dists = query_scratch->aligned_pqtable_dist_scratch;
 
@@ -175,6 +177,7 @@ namespace diskann {
     std::vector<unsigned> mem_tags(mem_L);
     std::vector<float> mem_dists(mem_L);
 
+// c: search in in-memory index.
 #ifdef OVERLAP_INIT
     if (mem_L) {
       mem_index_->search_with_tags_fast(query, mem_L, mem_tags.data(), mem_dists.data());
@@ -195,6 +198,7 @@ namespace diskann {
     std::sort(retset.begin(), retset.begin() + cur_list_size);
 #endif
 
+    // c: send IO
     std::queue<io_t> on_flight_ios;
     auto send_read_req = [&](Neighbor &item) -> bool {
       item.flag = false;
@@ -216,6 +220,7 @@ namespace diskann {
       return true;
     };
 
+    // c: poll IO
     std::unordered_map<unsigned, char *> id_buf_map;
     auto poll_all = [&]() -> std::pair<int, int> {
       // poll once.
@@ -250,6 +255,7 @@ namespace diskann {
       return n_sent != 0;  // nothing to send.
     };
 
+    // c: compute best node to expand.
     auto calc_best_node = [&]() -> int {  // if converged.
       // auto cpu_st = std::chrono::high_resolution_clock::now();
       unsigned marker = 0, nk = cur_list_size, first_unvisited_eager = cur_list_size;
@@ -323,6 +329,7 @@ namespace diskann {
     int cur_n_in = 0, cur_tot = 0;
 #endif
 
+    // c: main loop
     while (get_first_unvisited() != -1) {
       // poll to heap (best-effort) -> calc best from heap (skip if heap is empty) -> send IO (if can send) -> ...
       // auto io1_st = std::chrono::high_resolution_clock::now();

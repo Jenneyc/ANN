@@ -90,6 +90,7 @@ int search_disk_index(int argc, char **argv) {
   else
     diskann::cout << " beamwidth: " << beamwidth << std::endl;
 
+  // c: load query bin, gt
   diskann::load_bin<T>(query_bin, query, query_num, query_dim);
   // diskann::load_aligned_bin<T>(query_bin, query, query_num, query_dim, query_aligned_dim);
 
@@ -101,6 +102,7 @@ int search_disk_index(int argc, char **argv) {
     calc_recall_flag = true;
   }
 
+  // c: load disk index
   std::shared_ptr<AlignedFileReader> reader = nullptr;
   reader.reset(new LinuxAlignedFileReader());
 
