@@ -204,6 +204,19 @@ int search_disk_index(int argc, char **argv) {
     float mean_ios =
         (float) diskann::get_mean_stats(stats, query_num, [](const diskann::QueryStats &stats) { return stats.n_ios; });
 
+    float mean_head_us =
+        (float) diskann::get_mean_stats(stats, query_num, [](const diskann::QueryStats &stats) { return stats.head_us; });
+    float mean_init_us =
+        (float) diskann::get_mean_stats(stats, query_num, [](const diskann::QueryStats &stats) { return stats.init_us; });
+    float mean_loop_us =
+        (float) diskann::get_mean_stats(stats, query_num, [](const diskann::QueryStats &stats) { return stats.cpu_us2; });
+    float mean_io_us =
+        (float) diskann::get_mean_stats(stats, query_num, [](const diskann::QueryStats &stats) { return stats.io_us; });
+    float mean_cpu_us =
+        (float) diskann::get_mean_stats(stats, query_num, [](const diskann::QueryStats &stats) { return stats.cpu_us1; });
+    float mean_final_us = (float) diskann::get_mean_stats(
+        stats, query_num, [](const diskann::QueryStats &stats) { return stats.final_us; });
+
     delete[] stats;
 
     if (output) {
@@ -220,8 +233,11 @@ int search_disk_index(int argc, char **argv) {
                     << mean_latency << std::setw(12) << latency_999 << std::setw(12) << mean_hops << std::setw(12)
                     << mean_ios;
       if (calc_recall_flag) {
-        diskann::cout << std::setw(12) << recall << std::endl;
+        diskann::cout << std::setw(12) << recall;
       }
+      diskann::cout << std::setw(12) << mean_head_us << std::setw(12) << mean_init_us << std::setw(12) << mean_loop_us
+                    << std::setw(12) << mean_io_us << std::setw(12) << mean_cpu_us << std::setw(12) << mean_final_us
+                    << std::endl;
     }
   };
 
@@ -241,9 +257,11 @@ int search_disk_index(int argc, char **argv) {
                 << "AvgLat(us)" << std::setw(12) << "P99 Lat" << std::setw(12) << "Mean Hops" << std::setw(12)
                 << "Mean IOs" << std::setw(12);
   if (calc_recall_flag) {
-    diskann::cout << std::setw(12) << recall_string << std::endl;
-  } else
-    diskann::cout << std::endl;
+    diskann::cout << std::setw(12) << recall_string;
+  }
+  diskann::cout << std::setw(12) << "Head(us)" << std::setw(12) << "Init(us)" << std::setw(12) << "Loop(us)"
+                << std::setw(12) << "IO(us)" << std::setw(12) << "CPU(us)" << std::setw(12) << "Final(us)"
+                << std::endl;
   diskann::cout << "=============================================="
                    "==========================================="
                 << std::endl;

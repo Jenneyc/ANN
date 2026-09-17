@@ -26,7 +26,9 @@ namespace diskann {
     double read_size = 0;       // total # of bytes read
     double io_us = 0;           // total time spent in IO
     double io_us1 = 0;          // total time spent in IO
-    double head_us = 0;         // total time spent in in-memory index
+    double head_us = 0;         // total time spent in in-memory index (entry-point search)
+    double init_us = 0;         // pipeline init: first IO issue + PQ table population
+    double final_us = 0;        // finalization: sort/dedup/copy results
     double cpu_us = 0;          // total time spent in CPU
     double cpu_us1 = 0;         // total time spent in CPU
     double cpu_us2 = 0;         // total time spent in CPU

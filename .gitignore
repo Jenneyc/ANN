@@ -5,3 +5,5 @@ indices/
 data/*
 figures/*
 scripts/tests/drop_cache
+Guo和Lu - 2026 - Achieving Low-Latency Graph-Based Vector Search via Aligning Best-First Search Algorithm with SSD.pdf
+index/

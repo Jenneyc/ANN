@@ -167,7 +167,11 @@ namespace diskann {
     stats->cpu_us = 0;
     stats->cpu_us1 = 0;
     stats->cpu_us2 = 0;
+    stats->head_us = 0;   // entry-point search (in-memory index)
+    stats->init_us = 0;   // pipeline init: first IO issue + PQ table
+    stats->final_us = 0;  // finalize: sort/dedup/copy results
     // search in in-memory index.
+    auto head_st = std::chrono::high_resolution_clock::now();
 
 #ifdef DYN_PIPE_WIDTH
     int64_t cur_beam_width = 4;  // before converge.
@@ -197,6 +201,9 @@ namespace diskann {
     }
     std::sort(retset.begin(), retset.begin() + cur_list_size);
 #endif
+    stats->head_us =
+        std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - head_st)
+            .count();
 
     // c: send IO
     std::queue<io_t> on_flight_ios;
@@ -262,12 +269,16 @@ namespace diskann {
       /* calculate one from "already read" */
       for (marker = 0; marker < cur_list_size; ++marker) {
         if (!retset[marker].visited && id_buf_map.find(retset[marker].id) != id_buf_map.end()) {
+          auto cpu_st = std::chrono::high_resolution_clock::now();
           retset[marker].flag = false;  // even out the id_buf_map cost to O(1)
           retset[marker].visited = true;
           auto it = id_buf_map.find(retset[marker].id);
           auto [id, buf] = *it;
           compute_exact_dists_and_push(buf, id);
           compute_and_push_nbrs(buf, nk);
+          stats->cpu_us1 +=
+              std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - cpu_st)
+                  .count();
           break;
         }
       }
@@ -313,7 +324,7 @@ namespace diskann {
 
     std::ignore = print_state;
 
-    auto cpu2_st = std::chrono::high_resolution_clock::now();
+    auto init_st = std::chrono::high_resolution_clock::now();
     send_best_read_req(cur_beam_width - on_flight_ios.size());
     unsigned marker = 0, max_marker = 0;
 #ifdef OVERLAP_INIT
@@ -329,7 +340,12 @@ namespace diskann {
     int cur_n_in = 0, cur_tot = 0;
 #endif
 
+    stats->init_us =
+        std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - init_st)
+            .count();
+
     // c: main loop
+    auto loop_st = std::chrono::high_resolution_clock::now();
     while (get_first_unvisited() != -1) {
       // poll to heap (best-effort) -> calc best from heap (skip if heap is empty) -> send IO (if can send) -> ...
       // auto io1_st = std::chrono::high_resolution_clock::now();
@@ -368,9 +384,12 @@ namespace diskann {
       marker = calc_best_node();
       max_marker = std::max(max_marker, marker);
     }
-    auto cpu2_ed = std::chrono::high_resolution_clock::now();
-    stats->cpu_us2 = std::chrono::duration_cast<std::chrono::microseconds>(cpu2_ed - cpu2_st).count();
+    auto loop_ed = std::chrono::high_resolution_clock::now();
+    stats->cpu_us2 = std::chrono::duration_cast<std::chrono::microseconds>(loop_ed - loop_st).count();
     stats->cpu_us = n_computes;
+    // IO wait ~= main loop time - expansion compute time (non-blocking pipeline).
+    stats->io_us = stats->cpu_us2 > stats->cpu_us1 ? stats->cpu_us2 - stats->cpu_us1 : 0;
+    auto final_st = loop_ed;
 
     std::sort(full_retset.begin(), full_retset.end(),
               [](const Neighbor &left, const Neighbor &right) { return left < right; });
@@ -393,6 +412,9 @@ namespace diskann {
       t++;
     }
 
+    stats->final_us =
+        std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - final_st)
+            .count();
     if (stats != nullptr) {
       stats->total_us = (double) query_timer.elapsed();
     }

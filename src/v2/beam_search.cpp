@@ -79,13 +79,21 @@ namespace diskann {
     char *sector_scratch = query_scratch->sector_scratch;
     _u64 &sector_scratch_idx = query_scratch->sector_idx;
 
-    // query <-> PQ chunk centers distances
-    float *pq_dists = query_scratch->aligned_pqtable_dist_scratch;
-    pq_table.populate_chunk_distances(query, pq_dists);
-
     // query <-> neighbor list
     float *dist_scratch = query_scratch->aligned_dist_scratch;
     _u8 *pq_coord_scratch = query_scratch->aligned_pq_coord_scratch;
+
+    Timer query_timer, io_timer, cpu_timer;
+    // 0. init: build the PQ distance table (counted in total latency)
+    auto init_st = std::chrono::high_resolution_clock::now();
+    // query <-> PQ chunk centers distances
+    float *pq_dists = query_scratch->aligned_pqtable_dist_scratch;
+    pq_table.populate_chunk_distances(query, pq_dists);
+    if (stats != nullptr) {
+      stats->init_us = (double) std::chrono::duration_cast<std::chrono::microseconds>(
+                           std::chrono::high_resolution_clock::now() - init_st)
+                           .count();
+    }
 
     // lambda to batch compute query<-> node distances in PQ space
     auto compute_dists = [this, pq_coord_scratch, pq_dists](const unsigned *ids, const _u64 n_ids, float *dists_out) {
@@ -93,7 +101,8 @@ namespace diskann {
       ::pq_dist_lookup(pq_coord_scratch, n_ids, this->n_chunks, pq_dists, dists_out);
     };
 
-    Timer query_timer, io_timer, cpu_timer;
+    // 1. entry-point search (medoid selection / in-memory index search + initial retset)
+    auto head_st = std::chrono::high_resolution_clock::now();
     std::vector<Neighbor> retset;
     retset.resize(4096);
     tsl::robin_set<_u64> visited(4096);
@@ -135,6 +144,11 @@ namespace diskann {
     }
 
     std::sort(retset.begin(), retset.begin() + cur_list_size);
+    if (stats != nullptr) {
+      stats->head_us = (double) std::chrono::duration_cast<std::chrono::microseconds>(
+                           std::chrono::high_resolution_clock::now() - head_st)
+                           .count();
+    }
 
     unsigned cmps = 0;
     unsigned hops = 0;
@@ -147,6 +161,8 @@ namespace diskann {
     std::vector<fnhood_t> frontier_nhoods;
     std::vector<IORequest> frontier_read_reqs;
 
+    // 2. main loop begins
+    auto loop_st = std::chrono::high_resolution_clock::now();
     while (k < cur_list_size && num_ios < IO_LIMIT) {
       auto nk = cur_list_size;
       // clear iteration state
@@ -208,8 +224,12 @@ namespace diskann {
 
         T *node_fp_coords_copy = data_buf + (data_buf_idx * aligned_dim);
         data_buf_idx++;
+        cpu_timer.reset();
         memcpy(node_fp_coords_copy, node_fp_coords, data_dim * sizeof(T));
         float cur_expanded_dist = dist_cmp->compare(query, node_fp_coords_copy, (unsigned) aligned_dim);
+        if (stats != nullptr) {
+          stats->cpu_us += (double) cpu_timer.elapsed();  // exact distance computation
+        }
 
         uint32_t tag = 0;
         if (likely(no_mapping)) {
@@ -316,6 +336,16 @@ namespace diskann {
           break;
       }
     }
+    // 2. main loop ends -> loop time; cpu_us1 mirrors cpu_us so the CPU column shows compute time
+    auto loop_ed = std::chrono::high_resolution_clock::now();
+    if (stats != nullptr) {
+      stats->cpu_us2 =
+          (double) std::chrono::duration_cast<std::chrono::microseconds>(loop_ed - loop_st).count();
+      stats->cpu_us1 = stats->cpu_us;
+    }
+
+    // 5. finalization: sort + return scratch + (result copy in the caller)
+    auto final_st = loop_ed;
     // re-sort by distance
     std::sort(full_retset.begin(), full_retset.end(),
               [](const Neighbor &left, const Neighbor &right) { return left < right; });
@@ -327,6 +357,9 @@ namespace diskann {
     }
 
     if (stats != nullptr) {
+      stats->final_us = (double) std::chrono::duration_cast<std::chrono::microseconds>(
+                            std::chrono::high_resolution_clock::now() - final_st)
+                            .count();
       stats->total_us = (double) query_timer.elapsed();
     }
   }
@@ -340,6 +373,8 @@ namespace diskann {
     std::vector<Neighbor> expanded_nodes_info;
     this->disk_iterate_to_fixed_point_v(query, mem_L, (_u32) l_search, (_u32) beam_width, expanded_nodes_info, nullptr,
                                         stats, nullptr, deleted_nodes, dyn_search_l);
+    // result copy: account it in finalization time and total latency
+    auto copy_st = std::chrono::high_resolution_clock::now();
     _u64 res_count = 0;
     for (uint32_t i = 0; i < l_search && res_count < k_search && i < expanded_nodes_info.size(); i++) {
       if (likely(no_mapping)) {
@@ -349,6 +384,13 @@ namespace diskann {
       }
       distances[res_count] = expanded_nodes_info[i].distance;
       res_count++;
+    }
+    if (stats != nullptr) {
+      double copy_us = (double) std::chrono::duration_cast<std::chrono::microseconds>(
+                           std::chrono::high_resolution_clock::now() - copy_st)
+                           .count();
+      stats->final_us += copy_us;
+      stats->total_us += copy_us;
     }
     return res_count;
   }
