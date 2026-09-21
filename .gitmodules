@@ -1,0 +1,3 @@
+[submodule "third_party/SimpleSSD-Standalone"]
+	path = third_party/SimpleSSD-Standalone
+	url = https://github.com/SimpleSSD/SimpleSSD-Standalone.git

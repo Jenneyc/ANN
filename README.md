@@ -345,3 +345,24 @@ Hao Guo and Youyou Lu. Achieving Low-Latency Graph-Based Vector Search via Align
 
 ## Acknowledgments
 This repository is based on [DiskANN and FreshDiskANN](https://github.com/microsoft/DiskANN/tree/diskv2), we really appreciate it.
+
+## SSD Simulator (SimpleSSD) Support
+
+PipeANN can read the on-disk index either from a **real SSD** (io_uring, default)
+or from an **open-source SSD simulator** ([SimpleSSD](https://github.com/SimpleSSD/SimpleSSD-Standalone),
+vendored in `third_party/SimpleSSD-Standalone`).  With the simulator backend,
+index data is still correct (read from the real file), but every request's
+completion time is governed by the simulated SSD timing model.
+
+```bash
+# real SSD (default)
+build/tests/search_disk_index float /mnt/ssd1/pipeann-index/sift100m/100m 16 2 query.bin truth.bin 10 l2 1 0 10 20
+
+# simulated SSD
+PIPEANN_READER_TYPE=simssd build/tests/search_disk_index float /mnt/ssd1/pipeann-index/sift100m/100m 16 2 query.bin truth.bin 10 l2 1 0 10 20
+```
+
+See [scripts/simssd/README.md](scripts/simssd/README.md) for configuration
+knobs (device config, latency scaling, NVMe/none interface) and
+`include/reader_factory.h` for the programmatic interface.  Disable the
+simulator build with `cmake -DPIPEANN_WITH_SIMSSD=OFF`.

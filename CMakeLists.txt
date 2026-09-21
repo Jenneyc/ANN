@@ -187,6 +187,67 @@ else()
 	add_compile_options(-march=native -Wall -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free -fopenmp -fopenmp-simd -funroll-loops -Wfatal-errors -DUSE_ACCELERATED_PQ)
 endif()
 
+
+# ---------------------------------------------------------------------------
+# Optional SSD simulator reader backed by the open-source SimpleSSD simulator
+# (third_party/SimpleSSD-Standalone).  Enabled by default on Linux when the
+# SimpleSSD sources are present; disable with -DPIPEANN_WITH_SIMSSD=OFF.
+# ---------------------------------------------------------------------------
+option(PIPEANN_WITH_SIMSSD "Build SimSSDFileReader backed by SimpleSSD" ON)
+if(PIPEANN_WITH_SIMSSD AND NOT MSVC)
+	set(SIMPLESSD_HOME ${PROJECT_SOURCE_DIR}/third_party/SimpleSSD-Standalone)
+	if(EXISTS ${SIMPLESSD_HOME}/simplessd/CMakeLists.txt)
+		message(STATUS "SimpleSSD found: building SSD simulator reader support")
+		# SimpleSSD/DRAMPower/McPAT are old code bases built with -Werror;
+		# relax it so modern compilers do not fail the build.
+		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-error")
+		set(DRAMPOWER_SOURCE_DIR ${SIMPLESSD_HOME}/lib/drampower/src CACHE PATH "" FORCE)
+		add_subdirectory(${SIMPLESSD_HOME}/simplessd ${CMAKE_BINARY_DIR}/simplessd EXCLUDE_FROM_ALL)
+
+		file(GLOB SIMPLESSD_DRAMPOWER_SOURCES
+			${SIMPLESSD_HOME}/lib/drampower/src/*.cc
+			${SIMPLESSD_HOME}/lib/drampower/src/libdrampower/*.cc)
+		add_library(simplessd_standalone STATIC
+			${SIMPLESSD_HOME}/bil/entry.cc
+			${SIMPLESSD_HOME}/bil/noop_scheduler.cc
+			${SIMPLESSD_HOME}/igl/request/request_config.cc
+			${SIMPLESSD_HOME}/igl/trace/trace_config.cc
+			${SIMPLESSD_HOME}/sil/none/none.cc
+			${SIMPLESSD_HOME}/sil/nvme/nvme.cc
+			${SIMPLESSD_HOME}/sil/nvme/prp.cc
+			${SIMPLESSD_HOME}/sil/nvme/queue.cc
+			${SIMPLESSD_HOME}/sim/cfg_reader.cc
+			${SIMPLESSD_HOME}/sim/engine.cc
+			${SIMPLESSD_HOME}/sim/global_config.cc
+			${SIMPLESSD_HOME}/util/convert.cc
+			${SIMPLESSD_HOME}/util/print.cc
+			${SIMPLESSD_HOME}/util/stopwatch.cc
+			${SIMPLESSD_DRAMPOWER_SOURCES}
+		)
+		target_include_directories(simplessd_standalone PUBLIC
+			${SIMPLESSD_HOME}
+			${SIMPLESSD_HOME}/simplessd
+			${SIMPLESSD_HOME}/simplessd/lib/mcpat
+			${SIMPLESSD_HOME}/simplessd/lib/mcpat/cacti
+			${SIMPLESSD_HOME}/lib/drampower/src
+		)
+		set_target_properties(simplessd_standalone PROPERTIES CXX_STANDARD 11 POSITION_INDEPENDENT_CODE ON)
+		target_link_libraries(simplessd_standalone PUBLIC simplessd)
+		# Silence the (very verbose) legacy SimpleSSD/McPAT code base.
+		foreach(tgt simplessd mcpat simplessd_standalone)
+			if(TARGET ${tgt})
+				target_compile_options(${tgt} PRIVATE -w)
+			endif()
+		endforeach()
+		add_definitions(-DPIPEANN_WITH_SIMSSD)
+	else()
+		message(WARNING "PIPEANN_WITH_SIMSSD is ON but SimpleSSD is missing. "
+			"Run: git clone https://github.com/SimpleSSD/SimpleSSD-Standalone third_party/SimpleSSD-Standalone && "
+			"git -C third_party/SimpleSSD-Standalone submodule update --init")
+		set(PIPEANN_WITH_SIMSSD OFF)
+	endif()
+endif()
+
 add_subdirectory(src)
 add_subdirectory(tests)
 add_subdirectory(tests/utils)

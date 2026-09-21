@@ -24,6 +24,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include "linux_aligned_file_reader.h"
+#include "reader_factory.h"
 
 #define WARMUP false
 
@@ -103,8 +104,10 @@ int search_disk_index(int argc, char **argv) {
     calc_recall_flag = true;
   }
 
-  std::shared_ptr<AlignedFileReader> reader = nullptr;
-  reader.reset(new LinuxAlignedFileReader());
+  // Select the I/O backend: real SSD via io_uring (default) or the SimpleSSD
+  // simulated SSD.  Use ReaderType::URING / ReaderType::SIM_SSD to hard-code,
+  // or AUTO to honor the PIPEANN_READER_TYPE environment variable.
+  std::shared_ptr<AlignedFileReader> reader = create_aligned_file_reader(ReaderType::AUTO);
 
   diskann::Index<T> _pFlashIndex(m, query_dim, (uint64_t) 1e8, false, false, false);
   _pFlashIndex.load_from_disk_index(index_prefix_path);

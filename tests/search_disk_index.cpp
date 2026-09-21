@@ -24,6 +24,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include "linux_aligned_file_reader.h"
+#include "reader_factory.h"
 
 #define WARMUP false
 
@@ -103,8 +104,10 @@ int search_disk_index(int argc, char **argv) {
   }
 
   // c: load disk index
-  std::shared_ptr<AlignedFileReader> reader = nullptr;
-  reader.reset(new LinuxAlignedFileReader());
+  // Select the I/O backend: real SSD via io_uring (default) or the SimpleSSD
+  // simulated SSD.  Use ReaderType::URING / ReaderType::SIM_SSD to hard-code,
+  // or AUTO to honor the PIPEANN_READER_TYPE environment variable.
+  std::shared_ptr<AlignedFileReader> reader = create_aligned_file_reader(ReaderType::AUTO);
 
   std::unique_ptr<diskann::PQFlashIndex<T>> _pFlashIndex(
       new diskann::PQFlashIndex<T>(m, reader, SearchMode(search_mode), tags_flag));
@@ -204,16 +207,16 @@ int search_disk_index(int argc, char **argv) {
     float mean_ios =
         (float) diskann::get_mean_stats(stats, query_num, [](const diskann::QueryStats &stats) { return stats.n_ios; });
 
-    float mean_head_us =
-        (float) diskann::get_mean_stats(stats, query_num, [](const diskann::QueryStats &stats) { return stats.head_us; });
-    float mean_init_us =
-        (float) diskann::get_mean_stats(stats, query_num, [](const diskann::QueryStats &stats) { return stats.init_us; });
-    float mean_loop_us =
-        (float) diskann::get_mean_stats(stats, query_num, [](const diskann::QueryStats &stats) { return stats.cpu_us2; });
+    float mean_head_us = (float) diskann::get_mean_stats(
+        stats, query_num, [](const diskann::QueryStats &stats) { return stats.head_us; });
+    float mean_init_us = (float) diskann::get_mean_stats(
+        stats, query_num, [](const diskann::QueryStats &stats) { return stats.init_us; });
+    float mean_loop_us = (float) diskann::get_mean_stats(
+        stats, query_num, [](const diskann::QueryStats &stats) { return stats.cpu_us2; });
     float mean_io_us =
         (float) diskann::get_mean_stats(stats, query_num, [](const diskann::QueryStats &stats) { return stats.io_us; });
-    float mean_cpu_us =
-        (float) diskann::get_mean_stats(stats, query_num, [](const diskann::QueryStats &stats) { return stats.cpu_us1; });
+    float mean_cpu_us = (float) diskann::get_mean_stats(stats, query_num,
+                                                        [](const diskann::QueryStats &stats) { return stats.cpu_us1; });
     float mean_final_us = (float) diskann::get_mean_stats(
         stats, query_num, [](const diskann::QueryStats &stats) { return stats.final_us; });
 
@@ -260,8 +263,7 @@ int search_disk_index(int argc, char **argv) {
     diskann::cout << std::setw(12) << recall_string;
   }
   diskann::cout << std::setw(12) << "Head(us)" << std::setw(12) << "Init(us)" << std::setw(12) << "Loop(us)"
-                << std::setw(12) << "IO(us)" << std::setw(12) << "CPU(us)" << std::setw(12) << "Final(us)"
-                << std::endl;
+                << std::setw(12) << "IO(us)" << std::setw(12) << "CPU(us)" << std::setw(12) << "Final(us)" << std::endl;
   diskann::cout << "=============================================="
                    "==========================================="
                 << std::endl;
